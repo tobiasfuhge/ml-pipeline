@@ -1,6 +1,6 @@
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
-from airflow.kubernetes.secret import Secret
+from airflow.contrib.kubernetes.secret import Secret
 from airflow.utils.dates import days_ago
 
 default_args = {"owner": "admin"}
