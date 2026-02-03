@@ -2,12 +2,10 @@ from airflow import DAG
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 from datetime import datetime
 
-# --- Basiskonfiguration für alle Spark-Tasks ---
-# Dies reduziert Code-Wiederholungen und macht den DAG übersichtlicher.
+# --- Basiskonfiguration für alle Spark-Tasks (angepasst für Standalone Cluster) ---
+# Wir entfernen die irrelevanten Kubernetes-Konfigurationen.
 base_spark_conf = {
     "spark.submit.deployMode": "cluster",
-    "spark.kubernetes.container.image": "ghcr.io/tobiasfuhge/ml-pipeline:1.0",
-    "spark.kubernetes.namespace": "airflow",
 }
 
 # --- Standard-DAG-Argumente ---
@@ -24,19 +22,19 @@ with DAG(
     dag_id="ml_pipeline_spark_manual_trigger",
     default_args=default_args,
     description="ML-Pipeline mit Spark, manuell triggerbar (EDA, Preprocessing, Training, Evaluation)",
-    schedule=None,  # Ermöglicht manuelles Triggern über die UI
+    schedule=None,
     start_date=datetime(2023, 1, 1),
     catchup=False,
-    tags=["spark", "ml", "kubernetes"],
+    tags=["spark", "ml", "standalone"],
 ) as dag:
 
     # --- 1. EDA ---
     eda = SparkSubmitOperator(
         task_id="eda",
-        application="/opt/spark/app/eda_spark.py",
-        conn_id="spark_k8s_conn",  # Verwendet die in der UI erstellte Verbindung
+        application="{{ dag.folder }}/eda_spark.py",
+        conn_id="spark_k8s_conn",  # Der Name ist ok, auch wenn es kein k8s-Mode mehr ist
         verbose=1,
-        conf=base_spark_conf,
+        conf=base_spark_conf, # Verwendet die neue, saubere Konfiguration
         application_args=[
             "--experiment-name-mlflow", "airflow-ml-pipeline",
             "--bucket-name", "input-data",
@@ -45,11 +43,9 @@ with DAG(
     )
 
     # --- 2. Preprocessing ---
-    # do_xcom_push=True sorgt dafür, dass die letzte Zeile der Standardausgabe
-    # (z.B. die run_id) als XCom gespeichert wird.
     preprocess = SparkSubmitOperator(
         task_id="preprocess",
-        application="/opt/spark/app/preprocessing_spark.py",
+        application="{{ dag.folder }}/preprocessing_spark.py",
         conn_id="spark_k8s_conn",
         verbose=1,
         conf=base_spark_conf,
@@ -65,26 +61,23 @@ with DAG(
     )
 
     # --- 3. Training ---
-    # Hier holen wir die run_id vom 'preprocess'-Task über XCom.
     train = SparkSubmitOperator(
         task_id="train",
-        application="/opt/spark/app/train_spark.py",
+        application="{{ dag.folder }}/train_spark.py",
         conn_id="spark_k8s_conn",
         verbose=1,
         conf=base_spark_conf,
         application_args=[
             "--experiment-name-mlflow", "airflow-ml-pipeline",
-            # Jinja-Templating, um den XCom-Wert vom vorherigen Task zu holen
             "--preprocessing-run-id", "{{ ti.xcom_pull(task_ids='preprocess') }}",
         ],
         do_xcom_push=True,
     )
 
     # --- 4. Evaluation ---
-    # Hier werden die run_ids von 'preprocess' und 'train' per XCom geholt.
     evaluate = SparkSubmitOperator(
         task_id="evaluate",
-        application="/opt/spark/app/evaluation_spark.py",
+        application="{{ dag.folder }}/evaluation_spark.py",
         conn_id="spark_k8s_conn",
         verbose=1,
         conf=base_spark_conf,
