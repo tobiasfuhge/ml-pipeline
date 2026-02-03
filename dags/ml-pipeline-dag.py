@@ -66,7 +66,7 @@ with DAG(
     eda = KubernetesPodOperator(
         task_id="eda",
         name="eda-pod",
-        namespace="default",
+        namespace="airflow",
         image="ghcr.io/einjit/data-eng:1.0",
         cmds=["python", "eda.py"],
         arguments=[
@@ -93,7 +93,7 @@ with DAG(
     preprocess = KubernetesPodOperator(
         task_id="preprocess",
         name="preprocess-pod",
-        namespace="default",
+        namespace="airflow",
         image="ghcr.io/einjit/data-eng:1.0",
         cmds=["python", "preprocessing.py"],
         arguments=[
@@ -124,7 +124,7 @@ with DAG(
     train = KubernetesPodOperator(
         task_id="train",
         name="train-pod",
-        namespace="default",
+        namespace="airflow",
         image="ghcr.io/einjit/data-eng:1.0",
         cmds=["python", "train.py"],
         arguments=[
@@ -158,7 +158,7 @@ with DAG(
     evaluate = KubernetesPodOperator(
         task_id="evaluate",
         name="evaluate-pod",
-        namespace="default",
+        namespace="airflow",
         image="ghcr.io/einjit/data-eng:1.0",
         cmds=["python", "evaluation.py"],
         arguments=[
