@@ -4,10 +4,10 @@ from airflow.utils.dates import days_ago
 
 default_args = {"owner": "airflow"}
 
-EXPERIMENT_NAME = "argo-wf-pipeline"
+EXPERIMENT_NAME = "aiflow-pipeline"
 BUCKET_NAME = "input-data"
 FILENAME = "customer-segmentation.csv"
-OUTPUT_PATH = "data/processed/"
+OUTPUT_PATH = "data-airflow/processed/"
 TEST_SIZE = 0.2
 RANDOM_STATE = 42
 MIN_F1 = 0.5
