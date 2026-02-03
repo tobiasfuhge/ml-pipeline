@@ -1,7 +1,7 @@
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
-from airflow.utils.dates import days_ago
+from airflow.utils.timezone import utcnow
 
 default_args = {"owner": "admin"}
 
@@ -56,7 +56,7 @@ with DAG(
     dag_id="ml_pipeline_argo_1to1",
     default_args=default_args,
     schedule_interval=None,
-    start_date=days_ago(1),
+    start_date=utcnow(),
     catchup=False,
 ) as dag:
 
