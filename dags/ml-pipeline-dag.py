@@ -1,85 +1,99 @@
 from airflow import DAG
-from airflow.providers.cncf.kubernetes.operators.spark_kubernetes import SparkKubernetesOperator
-from airflow.providers.cncf.kubernetes.sensors.spark_kubernetes import SparkKubernetesSensor
+from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 from datetime import datetime, timedelta
 
+# --- Default DAG args ---
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
+    "email_on_failure": False,
+    "email_on_retry": False,
     "retries": 1,
     "retry_delay": timedelta(minutes=5),
 }
 
+# --- DAG Definition ---
 with DAG(
-    dag_id="ml_pipeline_spark_k8s",
+    dag_id="ml_pipeline_spark",
     default_args=default_args,
-    schedule=None,
+    description="ML pipeline with Spark (EDA, Preprocessing, Training, Evaluation)",
+    schedule=None,  # Updated from schedule_interval to schedule
     start_date=datetime(2026, 2, 3),
     catchup=False,
 ) as dag:
 
-    # --- Hilfsfunktion für SparkApplication YAML ---
-    def create_spark_app(name, file_path, args):
-        return {
-            "apiVersion": "sparkoperator.k8s.io/v1beta2",
-            "kind": "SparkApplication",
-            "metadata": {"name": name, "namespace": "spark"},
-            "spec": {
-                "type": "Python",
-                "mode": "cluster",
-                "image": "ghcr.io/tobiasfuhge/ml-pipeline:1.0",
-                "pythonVersion": "3",
-                "mainApplicationFile": f"local://{file_path}",
-                "arguments": args,
-                "sparkVersion": "3.5.0",
-                "driver": {
-                    "cores": 1,
-                    "memory": "512m",
-                    "serviceAccount": "spark-operator-spark", # Prüfe diesen Namen!
-                },
-                "executor": {
-                    "cores": 1,
-                    "instances": 1,
-                    "memory": "512m",
-                },
-            },
-        }
-
     # --- 1. EDA ---
-    eda_submit = SparkKubernetesOperator(
-        task_id="eda_submit",
-        namespace="spark",
-        template_spec=create_spark_app("ml-eda", "/opt/spark/app/eda_spark.py", [
+    eda = SparkSubmitOperator(
+        task_id="eda",
+        application="/opt/spark/app/eda_spark.py",
+        conn_id="spark_default",
+        verbose=1,
+        conf={
+            "spark.kubernetes.container.image": "ghcr.io/tobiasfuhge/ml-pipeline:1.0",
+            "spark.kubernetes.namespace": "spark",
+        },
+        application_args=[
             "--experiment-name-mlflow", "airflow-ml-pipeline",
             "--bucket-name", "input-data",
             "--filename", "customer-segmentation.csv"
-        ]),
-    )
-    
-    eda_wait = SparkKubernetesSensor(
-        task_id="eda_wait",
-        namespace="spark",
-        application_name="ml-eda",
+        ]
     )
 
     # --- 2. Preprocessing ---
-    preprocess_submit = SparkKubernetesOperator(
-        task_id="preprocess_submit",
-        namespace="spark",
-        template_spec=create_spark_app("ml-preprocess", "/opt/spark/app/preprocessing_spark.py", [
+    preprocess = SparkSubmitOperator(
+        task_id="preprocess",
+        application="/opt/spark/app/preprocessing_spark.py",
+        conn_id="spark_default",
+        verbose=1,
+        conf={
+            "spark.kubernetes.container.image": "ghcr.io/tobiasfuhge/ml-pipeline:1.0",
+            "spark.kubernetes.namespace": "spark",
+        },
+        application_args=[
             "--experiment-name-mlflow", "airflow-ml-pipeline",
             "--bucket-name", "input-data",
             "--filename", "customer-segmentation.csv",
-            "--output-path", "data_spark/processed/"
-        ]),
+            "--output-path", "data_spark/processed/",
+            "--test-size", "0.2",
+            "--random-state", "42"
+        ]
     )
 
-    preprocess_wait = SparkKubernetesSensor(
-        task_id="preprocess_wait",
-        namespace="spark",
-        application_name="ml-preprocess",
+    # --- 3. Training ---
+    train = SparkSubmitOperator(
+        task_id="train",
+        application="/opt/spark/app/train_spark.py",
+        conn_id="spark_default",
+        verbose=1,
+        conf={
+            "spark.kubernetes.container.image": "ghcr.io/tobiasfuhge/ml-pipeline:1.0",
+            "spark.kubernetes.namespace": "spark",
+        },
+        application_args=[
+            "--experiment-name-mlflow", "airflow-ml-pipeline",
+            "--preprocessing-run-id", "/tmp/preprocessing_run_id_spark.txt"
+        ]
+    )
+
+    # --- 4. Evaluation ---
+    evaluate = SparkSubmitOperator(
+        task_id="evaluate",
+        application="/opt/spark/app/evaluation_spark.py",
+        conn_id="spark_default",
+        verbose=1,
+        conf={
+            "spark.kubernetes.container.image": "ghcr.io/tobiasfuhge/ml-pipeline:1.0",
+            "spark.kubernetes.namespace": "spark",
+        },
+        application_args=[
+            "--experiment-name-mlflow", "airflow-ml-pipeline",
+            "--training-run-id", "/tmp/train_run_id_spark.txt",
+            "--preprocessing-run-id", "/tmp/preprocessing_run_id_spark.txt",
+            "--min-f1-macro", "0.5",
+            "--min-precision-macro", "0.5",
+            "--f1-drift-factor", "0.5"
+        ]
     )
 
     # --- Task Dependencies ---
-    eda_submit >> eda_wait >> preprocess_submit >> preprocess_wait
-    # (Die restlichen Tasks train/evaluate folgen dem gleichen Muster)
+    eda >> preprocess >> train >> evaluate
