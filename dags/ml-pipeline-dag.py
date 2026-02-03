@@ -1,13 +1,14 @@
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.kubernetes_pod import KubernetesPodOperator
+from airflow.kubernetes.secret import Secret
 from airflow.utils.dates import days_ago
 
-default_args = {"owner": "airflow"}
+default_args = {"owner": "admin"}
 
-EXPERIMENT_NAME = "aiflow-pipeline"
+EXPERIMENT_NAME = "airflow-pipeline"
 BUCKET_NAME = "input-data"
 FILENAME = "customer-segmentation.csv"
-OUTPUT_PATH = "data-airflow/processed/"
+OUTPUT_PATH = "airflow-data/processed/"
 TEST_SIZE = 0.2
 RANDOM_STATE = 42
 MIN_F1 = 0.5
@@ -20,8 +21,39 @@ RF_MAX_DEPTH = 10
 GBM_N_ESTIMATORS = 100
 GBM_LEARNING_RATE = 0.1
 
+# ----------------------------
+# Secrets aus Kubernetes
+# ----------------------------
+aws_access_key = Secret(
+    deploy_type='env',
+    deploy_target='AWS_ACCESS_KEY_ID',
+    secret='minio',
+    key='root-user'
+)
+aws_secret_key = Secret(
+    deploy_type='env',
+    deploy_target='AWS_SECRET_ACCESS_KEY',
+    secret='minio',
+    key='root-password'
+)
+pg_user = Secret(
+    deploy_type='env',
+    deploy_target='POSTGRES_USER',
+    secret='postgres-admin',
+    key='postgres-user'
+)
+pg_password = Secret(
+    deploy_type='env',
+    deploy_target='POSTGRES_PASSWORD',
+    secret='postgres-admin',
+    key='postgres-password'
+)
+
+# ----------------------------
+# DAG Definition
+# ----------------------------
 with DAG(
-    dag_id="simple_ml_pipeline",
+    dag_id="ml_pipeline_argo_1to1",
     default_args=default_args,
     schedule_interval=None,
     start_date=days_ago(1),
@@ -43,7 +75,16 @@ with DAG(
             "--filename", FILENAME
         ],
         get_logs=True,
-        is_delete_operator_pod=True
+        is_delete_operator_pod=True,
+        env_from_secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
+        env_vars={
+            "MLFLOW_S3_ENDPOINT_URL": "http://minio.data-storage.svc.cluster.local:9000",
+            "MLFLOW_TRACKING_URI": "http://mlflow.mlops.svc.cluster.local:5000",
+            "AWS_DEFAULT_REGION": "us-east-1",
+            "POSTGRES_HOST": "postgres-postgresql.data-storage.svc.cluster.local",
+            "POSTGRES_PORT": "5432",
+            "POSTGRES_DB": "ds_db"
+        }
     )
 
     # --------------------
@@ -65,7 +106,16 @@ with DAG(
         ],
         get_logs=True,
         is_delete_operator_pod=True,
-        do_xcom_push=True
+        do_xcom_push=True,
+        env_from_secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
+        env_vars={
+            "MLFLOW_S3_ENDPOINT_URL": "http://minio.data-storage.svc.cluster.local:9000",
+            "MLFLOW_TRACKING_URI": "http://mlflow.mlops.svc.cluster.local:5000",
+            "AWS_DEFAULT_REGION": "us-east-1",
+            "POSTGRES_HOST": "postgres-postgresql.data-storage.svc.cluster.local",
+            "POSTGRES_PORT": "5432",
+            "POSTGRES_DB": "ds_db"
+        }
     )
 
     # --------------------
@@ -90,7 +140,16 @@ with DAG(
         ],
         get_logs=True,
         is_delete_operator_pod=True,
-        do_xcom_push=True
+        do_xcom_push=True,
+        env_from_secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
+        env_vars={
+            "MLFLOW_S3_ENDPOINT_URL": "http://minio.data-storage.svc.cluster.local:9000",
+            "MLFLOW_TRACKING_URI": "http://mlflow.mlops.svc.cluster.local:5000",
+            "AWS_DEFAULT_REGION": "us-east-1",
+            "POSTGRES_HOST": "postgres-postgresql.data-storage.svc.cluster.local",
+            "POSTGRES_PORT": "5432",
+            "POSTGRES_DB": "ds_db"
+        }
     )
 
     # --------------------
@@ -111,7 +170,16 @@ with DAG(
             "--f1-drift-factor", str(F1_DRIFT)
         ],
         get_logs=True,
-        is_delete_operator_pod=True
+        is_delete_operator_pod=True,
+        env_from_secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
+        env_vars={
+            "MLFLOW_S3_ENDPOINT_URL": "http://minio.data-storage.svc.cluster.local:9000",
+            "MLFLOW_TRACKING_URI": "http://mlflow.mlops.svc.cluster.local:5000",
+            "AWS_DEFAULT_REGION": "us-east-1",
+            "POSTGRES_HOST": "postgres-postgresql.data-storage.svc.cluster.local",
+            "POSTGRES_PORT": "5432",
+            "POSTGRES_DB": "ds_db"
+        }
     )
 
     # --------------------
