@@ -1,95 +1,120 @@
 from airflow import DAG
-from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
-from datetime import datetime
+from airflow.providers.cncf.kubernetes.operators.kubernetes_pod import KubernetesPodOperator
+from airflow.utils.dates import days_ago
 
-# --- Basiskonfiguration für alle Spark-Tasks (angepasst für Standalone Cluster) ---
-# Wir entfernen die irrelevanten Kubernetes-Konfigurationen.
-base_spark_conf = {
-    "spark.submit.deployMode": "cluster",
-}
+default_args = {"owner": "airflow"}
 
-# --- Standard-DAG-Argumente ---
-default_args = {
-    "owner": "airflow",
-    "depends_on_past": False,
-    "email_on_failure": False,
-    "email_on_retry": False,
-    "retries": 1,
-}
+EXPERIMENT_NAME = "argo-wf-pipeline"
+BUCKET_NAME = "input-data"
+FILENAME = "customer-segmentation.csv"
+OUTPUT_PATH = "data/processed/"
+TEST_SIZE = 0.2
+RANDOM_STATE = 42
+MIN_F1 = 0.5
+MIN_PRECISION = 0.5
+F1_DRIFT = 0.5
+LR_MAX_ITER = 100
+LR_TOL = 0.0001
+RF_N_ESTIMATORS = 100
+RF_MAX_DEPTH = 10
+GBM_N_ESTIMATORS = 100
+GBM_LEARNING_RATE = 0.1
 
-# --- DAG Definition ---
 with DAG(
-    dag_id="ml_pipeline_spark_manual_trigger",
+    dag_id="simple_ml_pipeline",
     default_args=default_args,
-    description="ML-Pipeline mit Spark, manuell triggerbar (EDA, Preprocessing, Training, Evaluation)",
-    schedule=None,
-    start_date=datetime(2023, 1, 1),
+    schedule_interval=None,
+    start_date=days_ago(1),
     catchup=False,
-    tags=["spark", "ml", "standalone"],
 ) as dag:
 
-    # --- 1. EDA ---
-    eda = SparkSubmitOperator(
+    # --------------------
+    # 1. EDA Pod
+    # --------------------
+    eda = KubernetesPodOperator(
         task_id="eda",
-        application="{{ dag.folder }}/eda_spark.py",
-        conn_id="spark_k8s_conn",  # Der Name ist ok, auch wenn es kein k8s-Mode mehr ist
-        verbose=1,
-        conf=base_spark_conf, # Verwendet die neue, saubere Konfiguration
-        application_args=[
-            "--experiment-name-mlflow", "airflow-ml-pipeline",
-            "--bucket-name", "input-data",
-            "--filename", "customer-segmentation.csv"
-        ]
+        name="eda-pod",
+        namespace="default",
+        image="ghcr.io/einjit/data-eng:1.0",
+        cmds=["python", "eda.py"],
+        arguments=[
+            "--experiment-name-mlflow", EXPERIMENT_NAME,
+            "--bucket-name", BUCKET_NAME,
+            "--filename", FILENAME
+        ],
+        get_logs=True,
+        is_delete_operator_pod=True
     )
 
-    # --- 2. Preprocessing ---
-    preprocess = SparkSubmitOperator(
+    # --------------------
+    # 2. Preprocess Pod
+    # --------------------
+    preprocess = KubernetesPodOperator(
         task_id="preprocess",
-        application="{{ dag.folder }}/preprocessing_spark.py",
-        conn_id="spark_k8s_conn",
-        verbose=1,
-        conf=base_spark_conf,
-        application_args=[
-            "--experiment-name-mlflow", "airflow-ml-pipeline",
-            "--bucket-name", "input-data",
-            "--filename", "customer-segmentation.csv",
-            "--output-path", "data_spark/processed/",
-            "--test-size", "0.2",
-            "--random-state", "42"
+        name="preprocess-pod",
+        namespace="default",
+        image="ghcr.io/einjit/data-eng:1.0",
+        cmds=["python", "preprocessing.py"],
+        arguments=[
+            "--experiment-name-mlflow", EXPERIMENT_NAME,
+            "--bucket-name", BUCKET_NAME,
+            "--filename", FILENAME,
+            "--output-path", OUTPUT_PATH,
+            "--test-size", str(TEST_SIZE),
+            "--random-state", str(RANDOM_STATE)
         ],
-        do_xcom_push=True,
+        get_logs=True,
+        is_delete_operator_pod=True,
+        do_xcom_push=True
     )
 
-    # --- 3. Training ---
-    train = SparkSubmitOperator(
+    # --------------------
+    # 3. Train Pod
+    # --------------------
+    train = KubernetesPodOperator(
         task_id="train",
-        application="{{ dag.folder }}/train_spark.py",
-        conn_id="spark_k8s_conn",
-        verbose=1,
-        conf=base_spark_conf,
-        application_args=[
-            "--experiment-name-mlflow", "airflow-ml-pipeline",
+        name="train-pod",
+        namespace="default",
+        image="ghcr.io/einjit/data-eng:1.0",
+        cmds=["python", "train.py"],
+        arguments=[
+            "--experiment-name-mlflow", EXPERIMENT_NAME,
             "--preprocessing-run-id", "{{ ti.xcom_pull(task_ids='preprocess') }}",
+            "--random-state", str(RANDOM_STATE),
+            "--lr-max-iter", str(LR_MAX_ITER),
+            "--lr-tol", str(LR_TOL),
+            "--rf-n-estimators", str(RF_N_ESTIMATORS),
+            "--rf-max-depth", str(RF_MAX_DEPTH),
+            "--gbm-n-estimators", str(GBM_N_ESTIMATORS),
+            "--gbm-learning-rate", str(GBM_LEARNING_RATE)
         ],
-        do_xcom_push=True,
+        get_logs=True,
+        is_delete_operator_pod=True,
+        do_xcom_push=True
     )
 
-    # --- 4. Evaluation ---
-    evaluate = SparkSubmitOperator(
+    # --------------------
+    # 4. Evaluate Pod
+    # --------------------
+    evaluate = KubernetesPodOperator(
         task_id="evaluate",
-        application="{{ dag.folder }}/evaluation_spark.py",
-        conn_id="spark_k8s_conn",
-        verbose=1,
-        conf=base_spark_conf,
-        application_args=[
-            "--experiment-name-mlflow", "airflow-ml-pipeline",
+        name="evaluate-pod",
+        namespace="default",
+        image="ghcr.io/einjit/data-eng:1.0",
+        cmds=["python", "evaluation.py"],
+        arguments=[
+            "--experiment-name-mlflow", EXPERIMENT_NAME,
             "--training-run-id", "{{ ti.xcom_pull(task_ids='train') }}",
             "--preprocessing-run-id", "{{ ti.xcom_pull(task_ids='preprocess') }}",
-            "--min-f1-macro", "0.5",
-            "--min-precision-macro", "0.5",
-            "--f1-drift-factor", "0.5"
-        ]
+            "--min-f1-macro", str(MIN_F1),
+            "--min-precision-macro", str(MIN_PRECISION),
+            "--f1-drift-factor", str(F1_DRIFT)
+        ],
+        get_logs=True,
+        is_delete_operator_pod=True
     )
 
-    # --- Task-Abhängigkeiten festlegen ---
+    # --------------------
+    # DAG Reihenfolge
+    # --------------------
     eda >> preprocess >> train >> evaluate
