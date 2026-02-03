@@ -105,7 +105,7 @@ with DAG(
             "--random-state", str(RANDOM_STATE)
         ],
         get_logs=True,
-        is_delete_operator_pod=True,
+        on_finish_action='keep_pod',
         do_xcom_push=True,
         secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
         env_vars={
@@ -139,7 +139,7 @@ with DAG(
             "--gbm-learning-rate", str(GBM_LEARNING_RATE)
         ],
         get_logs=True,
-        is_delete_operator_pod=True,
+        on_finish_action='keep_pod',
         do_xcom_push=True,
         secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
         env_vars={
@@ -170,7 +170,7 @@ with DAG(
             "--f1-drift-factor", str(F1_DRIFT)
         ],
         get_logs=True,
-        is_delete_operator_pod=True,
+        on_finish_action='keep_pod',
         secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
         env_vars={
             "MLFLOW_S3_ENDPOINT_URL": "http://minio.data-storage.svc.cluster.local:9000",
