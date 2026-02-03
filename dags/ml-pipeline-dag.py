@@ -55,7 +55,7 @@ pg_password = Secret(
 with DAG(
     dag_id="ml_pipeline_argo_1to1",
     default_args=default_args,
-    schedule_interval=None,
+    schedule=None,
     start_date=utcnow(),
     catchup=False,
 ) as dag:
