@@ -76,7 +76,7 @@ with DAG(
         ],
         get_logs=True,
         is_delete_operator_pod=True,
-        env_from_secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
+        secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
         env_vars={
             "MLFLOW_S3_ENDPOINT_URL": "http://minio.data-storage.svc.cluster.local:9000",
             "MLFLOW_TRACKING_URI": "http://mlflow.mlops.svc.cluster.local:5000",
@@ -107,7 +107,7 @@ with DAG(
         get_logs=True,
         is_delete_operator_pod=True,
         do_xcom_push=True,
-        env_from_secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
+        secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
         env_vars={
             "MLFLOW_S3_ENDPOINT_URL": "http://minio.data-storage.svc.cluster.local:9000",
             "MLFLOW_TRACKING_URI": "http://mlflow.mlops.svc.cluster.local:5000",
@@ -141,7 +141,7 @@ with DAG(
         get_logs=True,
         is_delete_operator_pod=True,
         do_xcom_push=True,
-        env_from_secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
+        secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
         env_vars={
             "MLFLOW_S3_ENDPOINT_URL": "http://minio.data-storage.svc.cluster.local:9000",
             "MLFLOW_TRACKING_URI": "http://mlflow.mlops.svc.cluster.local:5000",
@@ -171,7 +171,7 @@ with DAG(
         ],
         get_logs=True,
         is_delete_operator_pod=True,
-        env_from_secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
+        secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
         env_vars={
             "MLFLOW_S3_ENDPOINT_URL": "http://minio.data-storage.svc.cluster.local:9000",
             "MLFLOW_TRACKING_URI": "http://mlflow.mlops.svc.cluster.local:5000",
