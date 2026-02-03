@@ -74,6 +74,7 @@ with DAG(
             "--bucket-name", BUCKET_NAME,
             "--filename", FILENAME
         ],
+        on_finish_action='delete_succeeded_pod',
         get_logs=True,
         is_delete_operator_pod=True,
         secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
