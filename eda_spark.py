@@ -1,7 +1,7 @@
 import os
 import json
 import argparse
-import mlflow
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, count, isnan, when, avg, sum as spark_sum
 
@@ -23,6 +23,7 @@ def parse_args():
     return p.parse_args()
 
 def main():
+    import mlflow
     args = parse_args()
 
     spark = SparkSession.builder.appName("eda").getOrCreate()
