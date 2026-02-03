@@ -76,7 +76,6 @@ with DAG(
         ],
         on_finish_action='keep_pod',
         get_logs=True,
-        is_delete_operator_pod=True,
         secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
         env_vars={
             "MLFLOW_S3_ENDPOINT_URL": "http://minio.data-storage.svc.cluster.local:9000",
