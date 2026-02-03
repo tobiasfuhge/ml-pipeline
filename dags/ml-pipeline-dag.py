@@ -16,22 +16,27 @@ default_args = {
 with DAG(
     dag_id="ml_pipeline_spark",
     default_args=default_args,
-    description="ML pipeline with Spark (EDA, Preprocessing, Training, Evaluation)",
-    schedule=None,  # Updated from schedule_interval to schedule
+    description="ML pipeline with Spark (EDA, Preprocessing, Training, Evaluation) on Kubernetes",
+    schedule=None,  # Manuell triggern
     start_date=datetime(2026, 2, 3),
     catchup=False,
 ) as dag:
+
+    # Basis-Config für Kubernetes Spark-Cluster
+    spark_conf = {
+        "spark.kubernetes.container.image": "ghcr.io/tobiasfuhge/ml-pipeline:1.0",
+        "spark.kubernetes.namespace": "airflow",  # Namespace, in dem die Pods laufen
+    }
 
     # --- 1. EDA ---
     eda = SparkSubmitOperator(
         task_id="eda",
         application="/opt/spark/app/eda_spark.py",
-        conn_id="spark_default",
+        conn_id=None,  # Keine SparkConn nötig, wir geben master direkt an
+        master="k8s://https://kubernetes.default.svc",
+        deploy_mode="cluster",
         verbose=1,
-        conf={
-            "spark.kubernetes.container.image": "ghcr.io/tobiasfuhge/ml-pipeline:1.0",
-            "spark.kubernetes.namespace": "spark",
-        },
+        conf=spark_conf,
         application_args=[
             "--experiment-name-mlflow", "airflow-ml-pipeline",
             "--bucket-name", "input-data",
@@ -43,12 +48,11 @@ with DAG(
     preprocess = SparkSubmitOperator(
         task_id="preprocess",
         application="/opt/spark/app/preprocessing_spark.py",
-        conn_id="spark_default",
+        conn_id=None,
+        master="k8s://https://kubernetes.default.svc",
+        deploy_mode="cluster",
         verbose=1,
-        conf={
-            "spark.kubernetes.container.image": "ghcr.io/tobiasfuhge/ml-pipeline:1.0",
-            "spark.kubernetes.namespace": "spark",
-        },
+        conf=spark_conf,
         application_args=[
             "--experiment-name-mlflow", "airflow-ml-pipeline",
             "--bucket-name", "input-data",
@@ -63,12 +67,11 @@ with DAG(
     train = SparkSubmitOperator(
         task_id="train",
         application="/opt/spark/app/train_spark.py",
-        conn_id="spark_default",
+        conn_id=None,
+        master="k8s://https://kubernetes.default.svc",
+        deploy_mode="cluster",
         verbose=1,
-        conf={
-            "spark.kubernetes.container.image": "ghcr.io/tobiasfuhge/ml-pipeline:1.0",
-            "spark.kubernetes.namespace": "spark",
-        },
+        conf=spark_conf,
         application_args=[
             "--experiment-name-mlflow", "airflow-ml-pipeline",
             "--preprocessing-run-id", "/tmp/preprocessing_run_id_spark.txt"
@@ -79,12 +82,11 @@ with DAG(
     evaluate = SparkSubmitOperator(
         task_id="evaluate",
         application="/opt/spark/app/evaluation_spark.py",
-        conn_id="spark_default",
+        conn_id=None,
+        master="k8s://https://kubernetes.default.svc",
+        deploy_mode="cluster",
         verbose=1,
-        conf={
-            "spark.kubernetes.container.image": "ghcr.io/tobiasfuhge/ml-pipeline:1.0",
-            "spark.kubernetes.namespace": "spark",
-        },
+        conf=spark_conf,
         application_args=[
             "--experiment-name-mlflow", "airflow-ml-pipeline",
             "--training-run-id", "/tmp/train_run_id_spark.txt",
