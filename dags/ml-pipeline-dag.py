@@ -67,7 +67,7 @@ with DAG(
         task_id="eda",
         name="eda-pod",
         namespace="airflow",
-        image="ghcr.io/tobiasfuhge/data-eng:1.0",
+        image="ghcr.io/tobiasfuhge/data-eng:2.0",
         cmds=["python", "eda.py"],
         arguments=[
             "--experiment-name-mlflow", EXPERIMENT_NAME,
@@ -94,7 +94,7 @@ with DAG(
         task_id="preprocess",
         name="preprocess-pod",
         namespace="airflow",
-        image="ghcr.io/tobiasfuhge/data-eng:1.0",
+        image="ghcr.io/tobiasfuhge/data-eng:2.0",
         cmds=["python", "preprocessing.py"],
         arguments=[
             "--experiment-name-mlflow", EXPERIMENT_NAME,
@@ -125,7 +125,7 @@ with DAG(
         task_id="train",
         name="train-pod",
         namespace="airflow",
-        image="ghcr.io/tobiasfuhge/data-eng:1.0",
+        image="ghcr.io/tobiasfuhge/data-eng:2.0",
         cmds=["python", "train.py"],
         arguments=[
             "--experiment-name-mlflow", EXPERIMENT_NAME,
@@ -159,7 +159,7 @@ with DAG(
         task_id="evaluate",
         name="evaluate-pod",
         namespace="airflow",
-        image="ghcr.io/tobiasfuhge/data-eng:1.0",
+        image="ghcr.io/tobiasfuhge/data-eng:2.0",
         cmds=["python", "evaluation.py"],
         arguments=[
             "--experiment-name-mlflow", EXPERIMENT_NAME,
