@@ -1,188 +1,175 @@
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
+from airflow.operators.short_circuit import ShortCircuitOperator
+from airflow.utils.task_group import TaskGroup
 from airflow.utils.timezone import utcnow
-
-default_args = {"owner": "admin"}
-
-EXPERIMENT_NAME = "airflow-pipeline"
-BUCKET_NAME = "input-data"
-FILENAME = "customer-segmentation.csv"
-OUTPUT_PATH = "airflow-data/processed/"
-TEST_SIZE = 0.2
-RANDOM_STATE = 42
-MIN_F1 = 0.5
-MIN_PRECISION = 0.5
-F1_DRIFT = 0.5
-LR_MAX_ITER = 100
-LR_TOL = 0.0001
-RF_N_ESTIMATORS = 100
-RF_MAX_DEPTH = 10
-GBM_N_ESTIMATORS = 100
-GBM_LEARNING_RATE = 0.1
+from airflow.models.param import Param
 
 # ----------------------------
-# Secrets aus Kubernetes
+# Defaults
 # ----------------------------
-aws_access_key = Secret(
-    deploy_type='env',
-    deploy_target='AWS_ACCESS_KEY_ID',
-    secret='minio',
-    key='root-user'
-)
-aws_secret_key = Secret(
-    deploy_type='env',
-    deploy_target='AWS_SECRET_ACCESS_KEY',
-    secret='minio',
-    key='root-password'
-)
-pg_user = Secret(
-    deploy_type='env',
-    deploy_target='POSTGRES_USER',
-    secret='postgres-admin',
-    key='postgres-user'
-)
-pg_password = Secret(
-    deploy_type='env',
-    deploy_target='POSTGRES_PASSWORD',
-    secret='postgres-admin',
-    key='postgres-password'
-)
+
+default_args = {
+    "owner": "admin",
+    "retries": 2,
+}
 
 # ----------------------------
-# DAG Definition
+# Constants
 # ----------------------------
+
+IMAGE = "ghcr.io/tobiasfuhge/data-eng:3.0"
+
+# ----------------------------
+# Secrets
+# ----------------------------
+
+aws_access_key = Secret("env", "AWS_ACCESS_KEY_ID", "minio", "root-user")
+aws_secret_key = Secret("env", "AWS_SECRET_ACCESS_KEY", "minio", "root-password")
+pg_user = Secret("env", "POSTGRES_USER", "postgres-admin", "postgres-user")
+pg_password = Secret("env", "POSTGRES_PASSWORD", "postgres-admin", "postgres-password")
+
+SECRETS = [aws_access_key, aws_secret_key, pg_user, pg_password]
+
+# ----------------------------
+# Shared ENV
+# ----------------------------
+
+COMMON_ENV = {
+    "MLFLOW_S3_ENDPOINT_URL": "http://minio.data-storage.svc.cluster.local:9000",
+    "MLFLOW_TRACKING_URI": "http://mlflow.mlops.svc.cluster.local:5000",
+    "AWS_DEFAULT_REGION": "us-east-1",
+    "POSTGRES_HOST": "postgres-postgresql.data-storage.svc.cluster.local",
+    "POSTGRES_PORT": "5432",
+    "POSTGRES_DB": "ds_db",
+}
+
+# ----------------------------
+# Gate Function
+# ----------------------------
+
+def promotion_gate(ti):
+    result = ti.xcom_pull(task_ids="ml.evaluate")
+    return result["promote"]
+
+# ----------------------------
+# DAG
+# ----------------------------
+
 with DAG(
-    dag_id="ml_pipeline_argo_1to1",
-    default_args=default_args,
-    schedule=None,
+    dag_id="ml_pipeline_airflow_native",
     start_date=utcnow(),
     catchup=False,
+    schedule=None,
+    default_args=default_args,
+
+    params={
+        "experiment": Param("airflow-pipeline"),
+        "bucket": Param("input-data"),
+        "file": Param("customer-segmentation.csv"),
+    }
 ) as dag:
 
-    # --------------------
-    # 1. EDA Pod
-    # --------------------
-    eda = KubernetesPodOperator(
-        task_id="eda",
-        name="eda-pod",
-        namespace="airflow",
-        image="ghcr.io/tobiasfuhge/data-eng:2.0",
-        cmds=["python", "eda.py"],
-        arguments=[
-            "--experiment-name-mlflow", EXPERIMENT_NAME,
-            "--bucket-name", BUCKET_NAME,
-            "--filename", FILENAME
-        ],
-        on_finish_action='delete_succeeded_pod',
-        get_logs=True,
-        secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
-        env_vars={
-            "MLFLOW_S3_ENDPOINT_URL": "http://minio.data-storage.svc.cluster.local:9000",
-            "MLFLOW_TRACKING_URI": "http://mlflow.mlops.svc.cluster.local:5000",
-            "AWS_DEFAULT_REGION": "us-east-1",
-            "POSTGRES_HOST": "postgres-postgresql.data-storage.svc.cluster.local",
-            "POSTGRES_PORT": "5432",
-            "POSTGRES_DB": "ds_db"
-        }
+    # =====================
+    # ML PIPELINE
+    # =====================
+
+    with TaskGroup("ml") as ml:
+
+        eda = KubernetesPodOperator(
+            task_id="eda",
+            image=IMAGE,
+            cmds=["python", "eda.py"],
+            arguments=[
+                "--experiment-name-mlflow", "{{ params.experiment }}",
+                "--bucket-name", "{{ params.bucket }}",
+                "--filename", "{{ params.file }}"
+            ],
+            namespace="airflow",
+            secrets=SECRETS,
+            env_vars=COMMON_ENV,
+            get_logs=True,
+            on_finish_action="delete_succeeded_pod",
+        )
+
+        preprocess = KubernetesPodOperator(
+            task_id="preprocess",
+            image=IMAGE,
+            cmds=["python", "preprocessing.py"],
+            arguments=[
+                "--experiment-name-mlflow", "{{ params.experiment }}",
+                "--bucket-name", "{{ params.bucket }}",
+                "--filename", "{{ params.file }}",
+                "--output-path", "airflow-data/processed/",
+                "--test-size", "0.2",
+                "--random-state", "42",
+            ],
+            namespace="airflow",
+            secrets=SECRETS,
+            env_vars=COMMON_ENV,
+            do_xcom_push=True,
+        )
+
+        train = KubernetesPodOperator(
+            task_id="train",
+            image=IMAGE,
+            cmds=["python", "train.py"],
+            arguments=[
+                "--experiment-name-mlflow", "{{ params.experiment }}",
+                "--preprocessing-run-id", "{{ ti.xcom_pull(task_ids='ml.preprocess') }}",
+                "--random-state", "42",
+                "--lr-max-iter", "100",
+                "--lr-tol", "0.0001",
+                "--rf-n-estimators", "100",
+                "--rf-max-depth", "10",
+                "--gbm-n-estimators", "100",
+                "--gbm-learning-rate", "0.1",
+            ],
+            namespace="airflow",
+            secrets=SECRETS,
+            env_vars=COMMON_ENV,
+            do_xcom_push=True,
+        )
+
+        evaluate = KubernetesPodOperator(
+            task_id="evaluate",
+            image=IMAGE,
+            cmds=["python", "evaluation.py"],
+            arguments=[
+                "--experiment-name-mlflow", "{{ params.experiment }}",
+                "--training-run-id", "{{ ti.xcom_pull(task_ids='ml.train') }}",
+                "--preprocessing-run-id", "{{ ti.xcom_pull(task_ids='ml.preprocess') }}",
+                "--min-f1-macro", "0.5",
+                "--min-precision-macro", "0.5",
+                "--f1-drift-factor", "0.5",
+            ],
+            namespace="airflow",
+            secrets=SECRETS,
+            env_vars=COMMON_ENV,
+            do_xcom_push=True,
+        )
+
+        eda >> preprocess >> train >> evaluate
+
+    # =====================
+    # GATE
+    # =====================
+
+    gate = ShortCircuitOperator(
+        task_id="promotion_gate",
+        python_callable=promotion_gate,
     )
 
-    # --------------------
-    # 2. Preprocess Pod
-    # --------------------
-    preprocess = KubernetesPodOperator(
-        task_id="preprocess",
-        name="preprocess-pod",
+    # =====================
+    # PROMOTION
+    # =====================
+
+    promote = KubernetesPodOperator(
+        task_id="promote_model",
+        image=IMAGE,
+        cmds=["echo", "PROMOTING MODEL 🚀"],
         namespace="airflow",
-        image="ghcr.io/tobiasfuhge/data-eng:2.0",
-        cmds=["python", "preprocessing.py"],
-        arguments=[
-            "--experiment-name-mlflow", EXPERIMENT_NAME,
-            "--bucket-name", BUCKET_NAME,
-            "--filename", FILENAME,
-            "--output-path", OUTPUT_PATH,
-            "--test-size", str(TEST_SIZE),
-            "--random-state", str(RANDOM_STATE)
-        ],
-        get_logs=True,
-        on_finish_action='delete_succeeded_pod',
-        do_xcom_push=True,
-        secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
-        env_vars={
-            "MLFLOW_S3_ENDPOINT_URL": "http://minio.data-storage.svc.cluster.local:9000",
-            "MLFLOW_TRACKING_URI": "http://mlflow.mlops.svc.cluster.local:5000",
-            "AWS_DEFAULT_REGION": "us-east-1",
-            "POSTGRES_HOST": "postgres-postgresql.data-storage.svc.cluster.local",
-            "POSTGRES_PORT": "5432",
-            "POSTGRES_DB": "ds_db"
-        }
     )
 
-    # --------------------
-    # 3. Train Pod
-    # --------------------
-    train = KubernetesPodOperator(
-        task_id="train",
-        name="train-pod",
-        namespace="airflow",
-        image="ghcr.io/tobiasfuhge/data-eng:2.0",
-        cmds=["python", "train.py"],
-        arguments=[
-            "--experiment-name-mlflow", EXPERIMENT_NAME,
-            "--preprocessing-run-id", "{{ ti.xcom_pull(task_ids='preprocess') }}",
-            "--random-state", str(RANDOM_STATE),
-            "--lr-max-iter", str(LR_MAX_ITER),
-            "--lr-tol", str(LR_TOL),
-            "--rf-n-estimators", str(RF_N_ESTIMATORS),
-            "--rf-max-depth", str(RF_MAX_DEPTH),
-            "--gbm-n-estimators", str(GBM_N_ESTIMATORS),
-            "--gbm-learning-rate", str(GBM_LEARNING_RATE)
-        ],
-        get_logs=True,
-        on_finish_action='delete_succeeded_pod',
-        do_xcom_push=True,
-        secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
-        env_vars={
-            "MLFLOW_S3_ENDPOINT_URL": "http://minio.data-storage.svc.cluster.local:9000",
-            "MLFLOW_TRACKING_URI": "http://mlflow.mlops.svc.cluster.local:5000",
-            "AWS_DEFAULT_REGION": "us-east-1",
-            "POSTGRES_HOST": "postgres-postgresql.data-storage.svc.cluster.local",
-            "POSTGRES_PORT": "5432",
-            "POSTGRES_DB": "ds_db"
-        }
-    )
-
-    # --------------------
-    # 4. Evaluate Pod
-    # --------------------
-    evaluate = KubernetesPodOperator(
-        task_id="evaluate",
-        name="evaluate-pod",
-        namespace="airflow",
-        image="ghcr.io/tobiasfuhge/data-eng:2.0",
-        cmds=["python", "evaluation.py"],
-        arguments=[
-            "--experiment-name-mlflow", EXPERIMENT_NAME,
-            "--training-run-id", "{{ ti.xcom_pull(task_ids='train') }}",
-            "--preprocessing-run-id", "{{ ti.xcom_pull(task_ids='preprocess') }}",
-            "--min-f1-macro", str(MIN_F1),
-            "--min-precision-macro", str(MIN_PRECISION),
-            "--f1-drift-factor", str(F1_DRIFT)
-        ],
-        get_logs=True,
-        on_finish_action='delete_succeeded_pod',
-        secrets=[aws_access_key, aws_secret_key, pg_user, pg_password],
-        env_vars={
-            "MLFLOW_S3_ENDPOINT_URL": "http://minio.data-storage.svc.cluster.local:9000",
-            "MLFLOW_TRACKING_URI": "http://mlflow.mlops.svc.cluster.local:5000",
-            "AWS_DEFAULT_REGION": "us-east-1",
-            "POSTGRES_HOST": "postgres-postgresql.data-storage.svc.cluster.local",
-            "POSTGRES_PORT": "5432",
-            "POSTGRES_DB": "ds_db"
-        }
-    )
-
-    # --------------------
-    # DAG Reihenfolge
-    # --------------------
-    eda >> preprocess >> train >> evaluate
+    ml >> gate >> promote

@@ -15,7 +15,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -24,13 +23,14 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--experiment-name-mlflow", required=True)
     parser.add_argument("--preprocessing-run-id", required=True)
+    parser.add_argument("--model-type", required=True, choices=["lr", "rf", "gbm"])
     parser.add_argument("--random-state", type=int, required=True)
-    parser.add_argument("--lr-max-iter", type=int, required=True)
-    parser.add_argument("--lr-tol", type=float, required=True)
-    parser.add_argument("--rf-n-estimators", type=int, required=True)
-    parser.add_argument("--rf-max-depth", type=int, required=True)
-    parser.add_argument("--gbm-n-estimators", type=int, required=True)
-    parser.add_argument("--gbm-learning-rate", type=float, required=True)
+    parser.add_argument("--lr-max-iter", type=int)
+    parser.add_argument("--lr-tol", type=float)
+    parser.add_argument("--rf-n-estimators", type=int)
+    parser.add_argument("--rf-max-depth", type=int)
+    parser.add_argument("--gbm-n-estimators", type=int)
+    parser.add_argument("--gbm-learning-rate", type=float)
     return parser.parse_args()
 
 
@@ -41,9 +41,6 @@ def write_xcom(value):
 
 
 def load_preprocessed_data(run_id):
-    if not run_id or run_id == "None":
-        raise RuntimeError("Invalid preprocessing_run_id received")
-
     client = mlflow.tracking.MlflowClient()
     tmp_dir = tempfile.mkdtemp()
 
@@ -70,12 +67,10 @@ def evaluate(model, X, y):
 
 
 def log_confusion_matrix(y_true, y_pred, name):
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(6, 4))
     cm = confusion_matrix(y_true, y_pred)
     ax.imshow(cm)
     ax.set_title(name)
-    ax.set_xlabel("Predicted")
-    ax.set_ylabel("True")
 
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
@@ -85,79 +80,69 @@ def log_confusion_matrix(y_true, y_pred, name):
     plt.close(fig)
 
 
+def build_model(args):
+    if args.model_type == "lr":
+        return "LogisticRegression", LogisticRegression(
+            max_iter=args.lr_max_iter,
+            tol=args.lr_tol,
+            solver="lbfgs",
+        )
+
+    if args.model_type == "rf":
+        return "RandomForest", RandomForestClassifier(
+            n_estimators=args.rf_n_estimators,
+            max_depth=args.rf_max_depth,
+            random_state=args.random_state,
+            n_jobs=-1,
+        )
+
+    if args.model_type == "gbm":
+        return "GradientBoosting", GradientBoostingClassifier(
+            n_estimators=args.gbm_n_estimators,
+            learning_rate=args.gbm_learning_rate,
+            random_state=args.random_state,
+        )
+
+    raise ValueError("Unknown model")
+
+
 def main():
     args = parse_args()
 
     mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
     mlflow.set_experiment(args.experiment_name_mlflow)
 
-    with mlflow.start_run(run_name="training") as run:
+    model_name, model = build_model(args)
+
+    with mlflow.start_run(run_name=model_name) as run:
         run_id = run.info.run_id
-        logger.info(f"Training run_id: {run_id}")
 
         mlflow.set_tag("pipeline_stage", "training")
+        mlflow.set_tag("model_type", args.model_type)
         mlflow.set_tag("preprocessing_run_id", args.preprocessing_run_id)
 
         X_train, X_val, y_train, y_val = load_preprocessed_data(args.preprocessing_run_id)
 
-        models = {
-            "LogisticRegression": LogisticRegression(
-                max_iter=args.lr_max_iter,
-                tol=args.lr_tol,
-                solver="lbfgs",
-            ),
-            "RandomForest": RandomForestClassifier(
-                n_estimators=args.rf_n_estimators,
-                max_depth=args.rf_max_depth,
-                random_state=args.random_state,
-                n_jobs=-1,
-            ),
-            "GradientBoosting": GradientBoostingClassifier(
-                n_estimators=args.gbm_n_estimators,
-                learning_rate=args.gbm_learning_rate,
-                random_state=args.random_state,
-            ),
+        model.fit(X_train, y_train)
+
+        metrics, preds = evaluate(model, X_val, y_val)
+
+        mlflow.log_params(model.get_params())
+        mlflow.log_metrics(metrics)
+        mlflow.sklearn.log_model(model, "model")
+
+        log_confusion_matrix(y_val, preds, model_name)
+
+        airflow_payload = {
+            "run_id": run_id,
+            "model": model_name,
+            "f1_macro": metrics["f1_macro"],
+            "accuracy": metrics["accuracy"],
         }
 
-        best_f1 = -1
-        best_model = None
-        best_name = None
+        write_xcom(airflow_payload)
 
-        for name, model in models.items():
-            with mlflow.start_run(run_name=name, nested=True):
-                logger.info(f"Training {name}")
-                model.fit(X_train, y_train)
-
-                metrics, preds = evaluate(model, X_val, y_val)
-
-                mlflow.log_params(model.get_params())
-                mlflow.log_metrics(metrics)
-                mlflow.sklearn.log_model(model, "model")
-
-                log_confusion_matrix(y_val, preds, name)
-
-                if metrics["f1_macro"] > best_f1:
-                    best_f1 = metrics["f1_macro"]
-                    best_model = model
-                    best_name = name
-
-        if hasattr(best_model, "feature_importances_"):
-            fi = pd.DataFrame({
-                "feature": X_train.columns,
-                "importance": best_model.feature_importances_,
-            })
-
-            with tempfile.TemporaryDirectory() as d:
-                path = os.path.join(d, "feature_importances.csv")
-                fi.to_csv(path, index=False)
-                mlflow.log_artifact(path)
-
-        mlflow.log_metric("best_f1_macro", best_f1)
-        mlflow.log_param("winning_model", best_name)
-
-        write_xcom(run_id)
-
-        logger.info(f"Training done. Best model: {best_name} ({best_f1:.4f})")
+        logger.info(f"Finished {model_name}: {airflow_payload}")
 
 
 if __name__ == "__main__":

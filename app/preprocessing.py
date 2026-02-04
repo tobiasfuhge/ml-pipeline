@@ -17,7 +17,6 @@ from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -40,8 +39,6 @@ def write_xcom(value):
 
 
 def load_data_from_s3(bucket_name, file_name):
-    logger.info("Loading raw dataset from MinIO")
-
     s3 = boto3.resource(
         "s3",
         endpoint_url=os.environ["MLFLOW_S3_ENDPOINT_URL"],
@@ -63,7 +60,6 @@ def main():
 
     with mlflow.start_run(run_name="preprocessing") as run:
         run_id = run.info.run_id
-        logger.info(f"Preprocessing MLflow run_id: {run_id}")
 
         df = load_data_from_s3(args.bucket_name, args.filename)
 
@@ -92,7 +88,6 @@ def main():
         df["SpendPerWebVisit"] = df["TotalSpend"] / df["NumWebVisitsMonth"].replace(0, 1)
 
         target_col = "umap_cluster"
-
         if target_col not in df.columns:
             raise RuntimeError("Target column umap_cluster missing")
 
@@ -140,11 +135,16 @@ def main():
 
         os.makedirs(args.output_path, exist_ok=True)
 
+        train_path = os.path.join(args.output_path, "train.csv")
+        val_path = os.path.join(args.output_path, "val.csv")
+
         pd.DataFrame(X_train_proc).assign(target=y_train.values)\
-            .to_csv(os.path.join(args.output_path, "train.csv"), index=False)
+            .to_csv(train_path, index=False)
 
         pd.DataFrame(X_val_proc).assign(target=y_val.values)\
-            .to_csv(os.path.join(args.output_path, "val.csv"), index=False)
+            .to_csv(val_path, index=False)
+
+        num_features = X_train_proc.shape[1]
 
         mlflow.log_params({
             "target": target_col,
@@ -152,6 +152,7 @@ def main():
             "random_state": args.random_state,
             "num_numeric": len(numerical_cols),
             "num_categorical": len(categorical_cols),
+            "num_features": num_features,
         })
 
         mlflow.log_metrics({
@@ -161,12 +162,21 @@ def main():
         })
 
         mlflow.log_artifacts(args.output_path, artifact_path="processed_data")
-
         mlflow.sklearn.log_model(preprocessor, artifact_path="preprocessing_model")
 
-        # ✅ RETURN RUN ID TO AIRFLOW
-        write_xcom(run_id)
-        logger.info("Preprocessing finished successfully")
+        airflow_payload = {
+            "run_id": run_id,
+            "train_path": train_path,
+            "val_path": val_path,
+            "train_rows": int(len(X_train)),
+            "val_rows": int(len(X_val)),
+            "num_features": int(num_features),
+            "num_clusters": int(y.nunique()),
+        }
+
+        write_xcom(airflow_payload)
+
+        logger.info(f"Preprocessing finished: {airflow_payload}")
 
 
 if __name__ == "__main__":

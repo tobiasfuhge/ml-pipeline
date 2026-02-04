@@ -11,10 +11,8 @@ import mlflow
 import boto3
 from botocore.client import Config
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 EXPECTED_COLUMNS = [
     "Recency", "MntWines", "MntFruits", "MntMeatProducts", "MntFishProducts",
@@ -48,8 +46,6 @@ def json_default(o):
 
 
 def load_data_from_s3(bucket_name, file_name):
-    logger.info("Loading data from MinIO/S3")
-
     s3 = boto3.resource(
         "s3",
         endpoint_url=os.environ["MLFLOW_S3_ENDPOINT_URL"],
@@ -77,7 +73,6 @@ def main():
 
     with mlflow.start_run(run_name="eda_customer_data") as run:
         run_id = run.info.run_id
-        logger.info(f"EDA MLflow run_id: {run_id}")
 
         df = load_data_from_s3(args.bucket_name, args.filename)
 
@@ -87,57 +82,12 @@ def main():
 
         df = df.dropna().drop_duplicates()
 
-        eda_summary = {
-            "num_rows": len(df),
-            "num_columns": df.shape[1],
-            "columns": list(df.columns),
-            "dtypes": df.dtypes.astype(str).to_dict(),
-            "missing_values": df.isnull().sum().to_dict(),
-            "duplicates": df.duplicated().sum(),
-        }
-
-        categorical_cols = [
-            "Education", "Marital_Status",
-            "AcceptedCmp1", "AcceptedCmp2", "AcceptedCmp3",
-            "AcceptedCmp4", "AcceptedCmp5",
-            "Complain", "Response"
-        ]
-
-        numerical_cols = [
-            "Recency", "MntWines", "MntFruits", "MntMeatProducts",
-            "MntFishProducts", "MntSweetProducts", "MntGoldProds",
-            "NumDealsPurchases", "NumWebPurchases", "NumCatalogPurchases",
-            "NumStorePurchases", "NumWebVisitsMonth",
-            "Income", "Kidhome", "Teenhome"
-        ]
-
-        categorical_distributions = {
-            c: df[c].value_counts(normalize=True).to_dict()
-            for c in categorical_cols if c in df.columns
-        }
-
-        numerical_stats = {
-            f"{c}_mean": float(df[c].mean())
-            for c in numerical_cols if c in df.columns
-        }
-
-        target_distribution = {}
-        if "umap_cluster" in df.columns:
-            target_distribution["umap_cluster"] = df["umap_cluster"].value_counts(normalize=True).to_dict()
-
-        os.makedirs("eda", exist_ok=True)
-
-        json.dump(eda_summary, open("eda/summary.json", "w"), indent=2, default=json_default)
-        json.dump(categorical_distributions, open("eda/categorical.json", "w"), indent=2, default=json_default)
-        json.dump(numerical_stats, open("eda/numerical.json", "w"), indent=2, default=json_default)
-        json.dump(target_distribution, open("eda/target.json", "w"), indent=2, default=json_default)
-
-        mlflow.log_artifacts("eda", artifact_path="eda")
+        missing_ratio = float(df.isnull().sum().sum()) / (df.shape[0] * df.shape[1])
 
         metrics = {
-            "num_rows": len(df),
-            "num_columns": df.shape[1],
-            "missing_ratio": float(df.isnull().sum().sum()) / (df.shape[0] * df.shape[1]),
+            "num_rows": int(len(df)),
+            "num_columns": int(df.shape[1]),
+            "missing_ratio": missing_ratio,
         }
 
         if "Income" in df.columns:
@@ -151,9 +101,20 @@ def main():
 
         mlflow.log_metrics(metrics)
 
-        # ✅ PUSH RUN ID TO AIRFLOW
-        write_xcom(run_id)
-        logger.info("EDA finished successfully")
+        # MLflow artifact
+        os.makedirs("eda", exist_ok=True)
+        json.dump(metrics, open("eda/metrics.json", "w"), indent=2)
+        mlflow.log_artifacts("eda", artifact_path="eda")
+
+        # 🚀 AIRFLOW PAYLOAD
+        airflow_payload = {
+            "run_id": run_id,
+            **metrics
+        }
+
+        write_xcom(airflow_payload)
+
+        logger.info(f"EDA finished: {airflow_payload}")
 
 
 if __name__ == "__main__":
