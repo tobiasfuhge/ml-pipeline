@@ -7,17 +7,14 @@ import argparse
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-name", required=True)
-    parser.add_argument("--evaluation-decision", required=True)
+    parser.add_argument("--best-run-id", required=True)
     return parser.parse_args()
 
 def main():
     args = parse_args()
     client = MlflowClient()
     model_name = args.model_name
-
-    data = json.load(args.evaluation_decision)
-
-    run_id = data["best_run_id"]
+    run_id = args.best_run_id
 
     model_uri = f"runs:/{run_id}/model"
 
