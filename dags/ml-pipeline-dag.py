@@ -182,7 +182,7 @@ with DAG(
         cmds=["python", "evaluation.py"],
         arguments=[
             "--experiment-name-mlflow", "{{ params.experiment }}",
-            "--training-results", "{{ ti.xcom_pull(task_ids=['train_models.train_lr','train_models.train_rf','train_models.train_gbm']) }}",
+            "--training-results", "{{ ti.xcom_pull(task_ids=['train_models.train_lr','train_models.train_rf','train_models.train_gbm']) | tojson }}",
             "--preprocessing-run-id", "{{ ti.xcom_pull(task_ids='preprocess')['run_id'] }}",
             "--min-f1-macro", "0.5",
             "--min-precision-macro", "0.5",
