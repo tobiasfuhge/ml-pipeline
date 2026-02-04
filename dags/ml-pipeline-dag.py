@@ -6,6 +6,7 @@ from airflow.utils.task_group import TaskGroup
 from airflow.utils.timezone import utcnow
 from airflow.models.param import Param
 
+
 # ----------------------------
 # Defaults
 # ----------------------------
@@ -15,7 +16,7 @@ default_args = {
     "retries": 0,
 }
 
-IMAGE = "ghcr.io/tobiasfuhge/data-eng:7.0"
+IMAGE = "ghcr.io/tobiasfuhge/data-eng:8.0"
 
 # ----------------------------
 # Secrets

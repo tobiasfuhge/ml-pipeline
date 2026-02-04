@@ -3,6 +3,7 @@ import mlflow
 from mlflow.tracking import MlflowClient
 import json
 import argparse
+import ast
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -14,9 +15,7 @@ def main():
     args = parse_args()
     client = MlflowClient()
     model_name = args.model_name
-    run_id = args.best_run_id
-    print(run_id)
-
+    run_id = ast.literal_eval(args.best_run_id)['best_run_id']
     model_uri = f"runs:/{run_id}/model"
 
     # Register
