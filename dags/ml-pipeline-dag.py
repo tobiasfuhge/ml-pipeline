@@ -12,7 +12,7 @@ from airflow.models.param import Param
 
 default_args = {
     "owner": "admin",
-    "retries": 2,
+    "retries": 0,
 }
 
 IMAGE = "ghcr.io/tobiasfuhge/data-eng:4.0"
