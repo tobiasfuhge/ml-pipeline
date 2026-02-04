@@ -3,7 +3,7 @@ from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperato
 from airflow.providers.cncf.kubernetes.secret import Secret
 from airflow.operators.python import ShortCircuitOperator
 from airflow.utils.task_group import TaskGroup
-from airflow.utils.dates import days_ago
+from airflow.utils.timezone import utcnow
 from airflow.models.param import Param
 
 # ----------------------------
@@ -55,7 +55,7 @@ def promotion_gate(ti):
 
 with DAG(
     dag_id="ml_pipeline_parallel_training",
-    start_date=days_ago(1),
+    start_date=utcnow(),
     catchup=False,
     schedule=None,
     default_args=default_args,
