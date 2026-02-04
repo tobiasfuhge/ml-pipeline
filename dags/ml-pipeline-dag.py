@@ -119,7 +119,7 @@ with DAG(
             cmds=["python", "train.py"],
             arguments=[
                 "--experiment-name-mlflow", "{{ params.experiment }}",
-                "--preprocessing-run-id", "{{ ti.xcom_pull(task_ids='preprocess') }}",
+                "--preprocessing-run-id", "{{ ti.xcom_pull(task_ids='preprocess')['run_id'] }}",
                 "--model-type", "lr",
                 "--random-state", "42",
                 "--lr-max-iter", "100",
@@ -139,7 +139,7 @@ with DAG(
             cmds=["python", "train.py"],
             arguments=[
                 "--experiment-name-mlflow", "{{ params.experiment }}",
-                "--preprocessing-run-id", "{{ ti.xcom_pull(task_ids='preprocess') }}",
+                "--preprocessing-run-id", "{{ ti.xcom_pull(task_ids='preprocess')['run_id'] }}",
                 "--model-type", "rf",
                 "--random-state", "42",
                 "--rf-n-estimators", "100",
@@ -159,7 +159,7 @@ with DAG(
             cmds=["python", "train.py"],
             arguments=[
                 "--experiment-name-mlflow", "{{ params.experiment }}",
-                "--preprocessing-run-id", "{{ ti.xcom_pull(task_ids='preprocess') }}",
+                "--preprocessing-run-id", "{{ ti.xcom_pull(task_ids='preprocess')['run_id'] }}",
                 "--model-type", "gbm",
                 "--random-state", "42",
                 "--gbm-n-estimators", "100",
@@ -183,7 +183,7 @@ with DAG(
         arguments=[
             "--experiment-name-mlflow", "{{ params.experiment }}",
             "--training-results", "{{ ti.xcom_pull(task_ids=['train_models.train_lr','train_models.train_rf','train_models.train_gbm']) }}",
-            "--preprocessing-run-id", "{{ ti.xcom_pull(task_ids='preprocess') }}",
+            "--preprocessing-run-id", "{{ ti.xcom_pull(task_ids='preprocess')['run_id'] }}",
             "--min-f1-macro", "0.5",
             "--min-precision-macro", "0.5",
             "--f1-drift-factor", "0.5",
