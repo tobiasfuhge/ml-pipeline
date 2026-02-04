@@ -15,7 +15,7 @@ default_args = {
     "retries": 0,
 }
 
-IMAGE = "ghcr.io/tobiasfuhge/data-eng:6.0"
+IMAGE = "ghcr.io/tobiasfuhge/data-eng:7.0"
 
 # ----------------------------
 # Secrets
@@ -213,7 +213,7 @@ with DAG(
         cmds=["python", "promote.py"],
         arguments=[
             "--model-name", "cusomer-segmentation",
-            "--best-run-id", "{{ ti.xcom_pull(task_ids='evaluate')[best_run_id] }}",
+            "--best-run-id", "{{ ti.xcom_pull(task_ids='evaluate') }}",
         ],
         namespace="airflow",
         secrets=SECRETS,

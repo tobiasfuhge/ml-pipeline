@@ -15,6 +15,7 @@ def main():
     client = MlflowClient()
     model_name = args.model_name
     run_id = args.best_run_id
+    print(run_id)
 
     model_uri = f"runs:/{run_id}/model"
 
