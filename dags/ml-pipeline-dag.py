@@ -213,7 +213,7 @@ with DAG(
         cmds=["python", "promote.py"],
         arguments=[
             "--model-name", "cusomer-segmentation",
-            "--evaluation-decision", "{{ ti.xcom_pull(task_ids='evaluate') }}",
+            "--evaluation-decision", "{{ ti.xcom_pull(task_ids='evaluate')  | tojson }}",
         ],
         namespace="airflow",
         secrets=SECRETS,
