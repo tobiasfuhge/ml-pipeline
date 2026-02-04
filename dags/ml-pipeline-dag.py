@@ -213,7 +213,7 @@ with DAG(
         cmds=["python", "promote.py"],
         arguments=[
             "--model-name", "cusomer-segmentation",
-            "--best-run-id", "{{ ti.xcom_pull(task_ids='evaluate')[best_run_id]}}",
+            "--best-run-id", "{{ ti.xcom_pull(task_ids='evaluate')[best_run_id] }}",
         ],
         namespace="airflow",
         secrets=SECRETS,
