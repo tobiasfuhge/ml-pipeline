@@ -109,6 +109,7 @@ with DAG(
             secrets=SECRETS,
             env_vars=COMMON_ENV,
             do_xcom_push=True,
+            on_finish_action="delete_succeeded_pod",
         )
 
         train = KubernetesPodOperator(
@@ -130,6 +131,7 @@ with DAG(
             secrets=SECRETS,
             env_vars=COMMON_ENV,
             do_xcom_push=True,
+            on_finish_action="delete_succeeded_pod",
         )
 
         evaluate = KubernetesPodOperator(
@@ -148,6 +150,7 @@ with DAG(
             secrets=SECRETS,
             env_vars=COMMON_ENV,
             do_xcom_push=True,
+            on_finish_action="delete_succeeded_pod",
         )
 
         eda >> preprocess >> train >> evaluate
@@ -170,6 +173,7 @@ with DAG(
         image=IMAGE,
         cmds=["echo", "PROMOTING MODEL 🚀"],
         namespace="airflow",
+        on_finish_action="delete_succeeded_pod",
     )
 
     ml >> gate >> promote
