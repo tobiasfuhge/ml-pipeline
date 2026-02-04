@@ -129,7 +129,11 @@ def main():
 
         mlflow.log_params(model.get_params())
         mlflow.log_metrics(metrics)
-        mlflow.sklearn.log_model(model, "model")
+        mlflow.sklearn.log_model(
+                    model,
+                    artifact_path="model",
+                    registered_model_name=None,
+                )
 
         log_confusion_matrix(y_val, preds, model_name)
 
