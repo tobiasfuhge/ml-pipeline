@@ -15,7 +15,7 @@ default_args = {
     "retries": 0,
 }
 
-IMAGE = "ghcr.io/tobiasfuhge/data-eng:5.0"
+IMAGE = "ghcr.io/tobiasfuhge/data-eng:6.0"
 
 # ----------------------------
 # Secrets
