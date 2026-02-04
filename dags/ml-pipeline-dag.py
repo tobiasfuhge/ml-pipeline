@@ -46,7 +46,7 @@ COMMON_ENV = {
 # ----------------------------
 
 def promotion_gate(ti):
-    result = ti.xcom_pull(task_ids="ml.evaluate")
+    result = ti.xcom_pull(task_ids="evaluate")
     return result.get("promote", False)
 
 # ----------------------------
