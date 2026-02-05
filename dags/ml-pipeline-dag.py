@@ -7,9 +7,6 @@ from airflow.utils.timezone import utcnow
 from airflow.models.param import Param
 
 
-# ----------------------------
-# Defaults
-# ----------------------------
 
 default_args = {
     "owner": "admin",
@@ -18,9 +15,6 @@ default_args = {
 
 IMAGE = "ghcr.io/tobiasfuhge/data-eng:10.0"
 
-# ----------------------------
-# Secrets
-# ----------------------------
 
 aws_access_key = Secret("env", "AWS_ACCESS_KEY_ID", "minio", "root-user")
 aws_secret_key = Secret("env", "AWS_SECRET_ACCESS_KEY", "minio", "root-password")
@@ -29,9 +23,6 @@ pg_password = Secret("env", "POSTGRES_PASSWORD", "postgres-admin", "postgres-pas
 
 SECRETS = [aws_access_key, aws_secret_key, pg_user, pg_password]
 
-# ----------------------------
-# Shared ENV
-# ----------------------------
 
 COMMON_ENV = {
     "MLFLOW_S3_ENDPOINT_URL": "http://minio.data-storage.svc.cluster.local:9000",
@@ -42,17 +33,11 @@ COMMON_ENV = {
     "POSTGRES_DB": "ds_db",
 }
 
-# ----------------------------
-# Promotion Gate
-# ----------------------------
 
 def promotion_gate(ti):
     result = ti.xcom_pull(task_ids="evaluate")
     return result.get("promote", False)
 
-# ----------------------------
-# DAG
-# ----------------------------
 
 with DAG(
     dag_id="ml_pipeline_parallel_training",
@@ -80,9 +65,6 @@ with DAG(
     }
 ) as dag:
 
-    # ----------------------------
-    # 1. EDA
-    # ----------------------------
     eda = KubernetesPodOperator(
         task_id="eda",
         image=IMAGE,
@@ -99,9 +81,6 @@ with DAG(
         on_finish_action="delete_succeeded_pod",
     )
 
-    # ----------------------------
-    # 2. Preprocessing
-    # ----------------------------
     preprocess = KubernetesPodOperator(
         task_id="preprocess",
         image=IMAGE,
@@ -122,9 +101,6 @@ with DAG(
         on_finish_action="delete_succeeded_pod",
     )
 
-    # ----------------------------
-    # 3. Train Models in Parallel
-    # ----------------------------
     with TaskGroup("train_models") as train_models:
 
         lr = KubernetesPodOperator(
@@ -187,9 +163,6 @@ with DAG(
             on_finish_action="delete_succeeded_pod",
         )
 
-    # ----------------------------
-    # 4. Evaluation
-    # ----------------------------
     evaluate = KubernetesPodOperator(
         task_id="evaluate",
         image=IMAGE,
@@ -210,17 +183,11 @@ with DAG(
         on_finish_action="delete_succeeded_pod",
     )
 
-    # ----------------------------
-    # 5. Gate
-    # ----------------------------
     gate = ShortCircuitOperator(
         task_id="promotion_gate",
         python_callable=promotion_gate,
     )
 
-    # ----------------------------
-    # 6. Promotion
-    # ----------------------------
     promote = KubernetesPodOperator(
         task_id="promote_model",
         image=IMAGE,
@@ -236,8 +203,5 @@ with DAG(
         on_finish_action="delete_succeeded_pod",
     )
 
-    # ----------------------------
-    # DAG Dependencies
-    # ----------------------------
 
     eda >> preprocess >> train_models >> evaluate >> gate >> promote
