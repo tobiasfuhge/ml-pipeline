@@ -23,7 +23,6 @@ pg_password = Secret("env", "POSTGRES_PASSWORD", "postgres-admin", "postgres-pas
 
 SECRETS = [aws_access_key, aws_secret_key, pg_user, pg_password]
 
-
 COMMON_ENV = {
     "MLFLOW_S3_ENDPOINT_URL": "http://minio.data-storage.svc.cluster.local:9000",
     "MLFLOW_TRACKING_URI": "http://mlflow.mlops.svc.cluster.local:5000",

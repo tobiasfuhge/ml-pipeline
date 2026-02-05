@@ -71,7 +71,6 @@ def main():
 
         df = df.dropna().drop_duplicates()
 
-        # Feature engineering
         mnt_cols = [
             "MntWines", "MntFruits", "MntMeatProducts",
             "MntFishProducts", "MntSweetProducts", "MntGoldProds"

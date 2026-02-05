@@ -101,12 +101,10 @@ def main():
 
         mlflow.log_metrics(metrics)
 
-        # MLflow artifact
         os.makedirs("eda", exist_ok=True)
         json.dump(metrics, open("eda/metrics.json", "w"), indent=2)
         mlflow.log_artifacts("eda", artifact_path="eda")
 
-        # 🚀 AIRFLOW PAYLOAD
         airflow_payload = {
             "run_id": run_id,
             **metrics

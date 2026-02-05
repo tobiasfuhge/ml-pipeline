@@ -18,10 +18,8 @@ def main():
     run_id = ast.literal_eval(args.best_run_id)['best_run_id']
     model_uri = f"runs:/{run_id}/model"
 
-    # Register
     result = mlflow.register_model(model_uri, model_name)
 
-    # Wait until ready
     client.transition_model_version_stage(
         name=model_name,
         version=result.version,
